@@ -19,7 +19,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className={inter.className}>
+      <body className={`${inter.className} bg-black text-white min-h-screen relative font-mono`}>
+        {/* Background image (add your file to /public/bg.jpg) */}
+        <div className="fixed inset-0 -z-50 bg-[url('/bg.jpg')] bg-cover bg-center bg-no-repeat" />
+        {/* Soft vignette overlay for readability */}
+        <div className="fixed inset-0 -z-40 pointer-events-none bg-gradient-to-b from-black/70 via-black/40 to-black/80" />
+        {/* Content */}
         {children}
         <Toaster position="top-center" richColors />
       </body>
