@@ -27,7 +27,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install click==8.1.7 tqdm==4.66.1 --no-deps
           pip install pyinstaller
+
+      - name: Verify imports
+        run: |
+          python -c "import click; import rhino3dm; print('Click version:', click.__version__); print('Rhino3dm loaded from:', rhino3dm.__file__)"
 
       - name: Show site-packages
         run: |
@@ -53,7 +58,7 @@ jobs:
       - name: Build CLI EXE
         run: |
           pyinstaller --noconfirm `
-            --onefile `
+            `
             --console `
             --name 3DMConverterCLI `
             --collect-all rhino3dm `
@@ -68,7 +73,7 @@ jobs:
 
       - name: Smoke test CLI EXE
         run: |
-          ./dist/3DMConverterCLI.exe --help
+          ./dist/3DMConverterCLI/3DMConverterCLI.exe --help
 
       - name: Zip GUI app (one-folder)
         run: |
@@ -84,4 +89,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: 3DMConverterCLI_Windows
-          path: ${{ github.workspace }}/3dm_version_converter/dist/3DMConverterCLI.exe
+          path: ${{ github.workspace }}/3dm_version_converter/dist/3DMConverterCLI
