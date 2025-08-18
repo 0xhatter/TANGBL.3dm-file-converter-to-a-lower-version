@@ -34,7 +34,7 @@ jobs:
           pyinstaller --noconfirm `
             --noconsole `
             --name 3DMVersionConverter `
-            --add-data README.md;. `
+            --add-data "README.md;." `
             gui.py
 
       - name: Build CLI EXE
