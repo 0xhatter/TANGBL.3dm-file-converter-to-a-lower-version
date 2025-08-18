@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: tangbl-3dm-converter
+    env: python
+    plan: free
+    region: frankfurt  # choose closest
+    buildCommand: pip install -r microservice/requirements.txt
+    startCommand: uvicorn microservice.app:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: ALLOWED_ORIGINS
+        sync: false
