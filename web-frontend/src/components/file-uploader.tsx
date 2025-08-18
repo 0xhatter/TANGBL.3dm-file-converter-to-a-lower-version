@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,14 @@ interface FormValues {
 export function FileUploader() {
   const [file, setFile] = useState<File | null>(null);
   const [isConverting, setIsConverting] = useState(false);
+  const [progress, setProgress] = useState(0); // 0-100
+  const [bytesSent, setBytesSent] = useState(0);
+  const [speedBps, setSpeedBps] = useState(0); // bytes per second
+  const [etaSec, setEtaSec] = useState<number | null>(null);
+
+  const converterUrl = useMemo(() =>
+    process.env.NEXT_PUBLIC_CONVERTER_API_URL?.replace(/\/$/, '') || '',
+  []);
 
   const form = useForm<FormValues>({
     defaultValues: {
@@ -53,6 +61,10 @@ export function FileUploader() {
     }
 
     setIsConverting(true);
+    setProgress(0);
+    setBytesSent(0);
+    setSpeedBps(0);
+    setEtaSec(null);
     
     try {
       toast.info(`Converting ${file.name} to Rhino ${values.targetVersion}...`);
@@ -61,16 +73,48 @@ export function FileUploader() {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('targetVersion', values.targetVersion);
-      
-      // Send the file to our API endpoint
-      const response = await fetch('/api/convert', {
-        method: 'POST',
-        body: formData,
-      });
-      
+      const startTs = Date.now();
+
+      // Prefer direct upload to microservice if env URL exists, else fallback to proxy
+      let response: Response;
+      if (converterUrl) {
+        // Use XHR for upload progress
+        const xhrResponse = await new Promise<Blob>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', `${converterUrl}/convert`);
+          xhr.responseType = 'blob';
+          xhr.upload.onprogress = (evt) => {
+            if (!evt.lengthComputable) return;
+            const pct = Math.round((evt.loaded / evt.total) * 100);
+            setProgress(pct);
+            setBytesSent(evt.loaded);
+            const elapsed = (Date.now() - startTs) / 1000;
+            if (elapsed > 0) {
+              const bps = evt.loaded / elapsed;
+              setSpeedBps(bps);
+              const remaining = evt.total - evt.loaded;
+              setEtaSec(bps > 0 ? Math.max(0, Math.round(remaining / bps)) : null);
+            }
+          };
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve(xhr.response);
+            } else {
+              reject(new Error(`Upstream error ${xhr.status}`));
+            }
+          };
+          xhr.onerror = () => reject(new Error('Network error'));
+          xhr.send(formData);
+        });
+        response = new Response(xhrResponse);
+      } else {
+        response = await fetch('/api/convert', { method: 'POST', body: formData });
+      }
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Conversion failed');
+        let msg = 'Conversion failed';
+        try { msg = (await response.json()).error || msg; } catch {}
+        throw new Error(msg);
       }
       
       // Get the file blob from the response
@@ -92,12 +136,18 @@ export function FileUploader() {
       URL.revokeObjectURL(downloadUrl);
       
       toast.success(`Conversion complete! Downloading ${filename}`);
-      
+    
     } catch (error) {
       toast.error(`Error converting file: ${error instanceof Error ? error.message : 'Unknown error'}`);
       console.error(error);
     } finally {
       setIsConverting(false);
+      setTimeout(() => {
+        setProgress(0);
+        setBytesSent(0);
+        setSpeedBps(0);
+        setEtaSec(null);
+      }, 800);
     }
   };
 
@@ -105,8 +155,26 @@ export function FileUploader() {
     setFile(null);
   };
 
+  const humanSpeed = useMemo(() => {
+    if (!speedBps) return '—';
+    const kb = speedBps / 1024;
+    const mb = kb / 1024;
+    const gb = mb / 1024;
+    if (gb >= 1) return `${gb.toFixed(1)} GB/s`;
+    if (mb >= 1) return `${mb.toFixed(1)} MB/s`;
+    if (kb >= 1) return `${kb.toFixed(0)} kB/s`;
+    return `${speedBps.toFixed(0)} B/s`;
+  }, [speedBps]);
+
+  const humanEta = useMemo(() => {
+    if (etaSec == null) return '—';
+    const m = Math.floor(etaSec / 60);
+    const s = etaSec % 60;
+    return `${m}m ${s.toString().padStart(2, '0')}s`;
+  }, [etaSec]);
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 font-mono">
       <div
         {...getRootProps()}
         className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-colors duration-200 ${isDragActive ? 'border-primary bg-primary/10' : 'border-border/60 hover:border-border/90'}`}
@@ -139,8 +207,9 @@ export function FileUploader() {
       </div>
 
       {file && (
-        <div className="mt-6 p-4 border border-border/60 rounded-lg bg-secondary/30">
-          <div className="flex items-center justify-between">
+        <div className="mt-6 p-4 border border-white/10 rounded-md bg-black/30">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Left: file + speed */}
             <div className="flex items-center space-x-3">
               <svg
                 className="w-8 h-8 text-primary/80"
@@ -157,18 +226,45 @@ export function FileUploader() {
                 ></path>
               </svg>
               <div>
-                <p className="font-medium">{file.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {(file.size / 1024 / 1024).toFixed(2)} MB
-                </p>
+                <p className="font-semibold tracking-widest">{file.name}</p>
+                <p className="text-xs text-white/60">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                <p className="text-xs mt-1"><span className="text-white/60">TRANSFER SPEED</span> <span className="text-white">{humanSpeed}</span></p>
               </div>
               <Button
                 variant="outline"
                 size="icon"
                 onClick={handleRemoveFile}
                 title="Remove file"
-                className="border-border/60 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-colors"
+                className="border-white/20 text-white/80 hover:bg-white/10 hover:text-white hover:border-white/40 transition-colors"
               ></Button>
+            </div>
+            {/* Middle: data volume bar */}
+            <div>
+              <div className="text-xs text-white/60 mb-2">DATA VOLUME</div>
+              <div className="h-8 border border-white/20 grid grid-cols-24 gap-[2px] p-[2px]">
+                {Array.from({ length: 24 }).map((_, i) => (
+                  <div key={i} className={`h-full ${progress >= ((i + 1) / 24) * 100 ? 'bg-white' : 'bg-white/10'}`}></div>
+                ))}
+              </div>
+              <div className="flex justify-between text-xs text-white/70 mt-2">
+                <span>{(bytesSent / 1024 / 1024).toFixed(2)} MB</span>
+                <span>OF {(file.size / 1024 / 1024).toFixed(2)} MB</span>
+              </div>
+              <div className="text-xs text-white/60 mt-1">OVERALL PROGRESS {progress}%</div>
+            </div>
+            {/* Right: ETA + actions */}
+            <div className="space-y-3">
+              <div>
+                <div className="text-xs text-white/60">EST. TIME</div>
+                <div className="text-2xl font-semibold tracking-wide">{humanEta}</div>
+                <div className="text-xs text-white/60">LESS THAN 15 MIN.</div>
+              </div>
+              <div className="grid grid-cols-1 gap-2">
+                <Button type="button" variant="outline" disabled={!isConverting}
+                        className="justify-center border-white/40 text-white hover:bg-white/10">PAUSE</Button>
+                <Button type="button" variant="outline" onClick={handleRemoveFile}
+                        className="justify-center border-white/40 text-white hover:bg-white/10">CANCEL</Button>
+              </div>
             </div>
           </div>
         </div>
