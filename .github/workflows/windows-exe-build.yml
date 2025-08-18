@@ -35,6 +35,7 @@ jobs:
             --noconsole `
             --name 3DMVersionConverter `
             --add-data "README.md;." `
+            --collect-all rhino3dm `
             gui.py
 
       - name: Build CLI EXE
@@ -42,20 +43,21 @@ jobs:
           pyinstaller --noconfirm `
             --console `
             --name 3DMConverterCLI `
+            --collect-all rhino3dm `
             converter.py
 
       - name: Zip GUI app
         run: |
-          Compress-Archive -Path "dist/3DMVersionConverter/*" -DestinationPath "../3DMVersionConverter_Windows.zip" -Force
+          Compress-Archive -Path "dist/3DMVersionConverter/*" -DestinationPath "3DMVersionConverter_Windows.zip" -Force
 
       - name: Upload GUI artifact
         uses: actions/upload-artifact@v4
         with:
           name: 3DMVersionConverter_Windows
-          path: 3dm_version_converter/../3DMVersionConverter_Windows.zip
+          path: ${{ github.workspace }}/3dm_version_converter/3DMVersionConverter_Windows.zip
 
       - name: Upload CLI artifact
         uses: actions/upload-artifact@v4
         with:
           name: 3DMConverterCLI_Windows
-          path: 3dm_version_converter/dist/3DMConverterCLI/**
+          path: ${{ github.workspace }}/3dm_version_converter/dist/3DMConverterCLI/**
