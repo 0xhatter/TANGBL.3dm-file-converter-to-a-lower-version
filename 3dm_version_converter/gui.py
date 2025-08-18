@@ -16,14 +16,8 @@ import converter as conv
 
 APP_TITLE = "TANGBL.3dm File Downsaver"
 
-# Dark mode colors
-DARK_BG = "#121212"
-DARK_FRAME_BG = "#1E1E1E"
-DARK_TEXT = "#E0E0E0"
-DARK_ACCENT = "#3A3A3A"
-DARK_HIGHLIGHT = "#505050"
-DARK_BUTTON = "#2A2A2A"
-DARK_BUTTON_ACTIVE = "#404040"
+# Light mode (default system theme)
+# Dark theme disabled; using platform default ttk styles.
 
 class ConverterGUI(tk.Tk):
     def __init__(self):
@@ -31,14 +25,8 @@ class ConverterGUI(tk.Tk):
         self.title(APP_TITLE)
         self.geometry("700x520")
         self.minsize(640, 480)
-        
-        # Set dark mode
-        self.configure(bg=DARK_BG)
-        self.dark_mode = True
-        
-        # Apply dark theme
-        self._apply_dark_theme()
 
+        # Use default light theme (system/ttk defaults). No custom dark styling.
         self.input_files = []  # list[Path]
         self.input_dir = None  # Path or None
         self.output_dir = None # Path or None
@@ -49,24 +37,8 @@ class ConverterGUI(tk.Tk):
         self._build_ui()
 
     def _apply_dark_theme(self):
-        """Apply dark theme to ttk widgets"""
-        style = ttk.Style(self)
-        
-        # Configure ttk styles for dark mode
-        style.configure('TFrame', background=DARK_BG)
-        style.configure('TLabel', background=DARK_BG, foreground=DARK_TEXT)
-        style.configure('TButton', background=DARK_BUTTON, foreground=DARK_TEXT)
-        style.map('TButton', 
-                  background=[('active', DARK_BUTTON_ACTIVE), ('disabled', DARK_BG)],
-                  foreground=[('disabled', DARK_ACCENT)])
-        style.configure('TCheckbutton', background=DARK_BG, foreground=DARK_TEXT)
-        style.configure('TRadiobutton', background=DARK_BG, foreground=DARK_TEXT)
-        style.configure('TEntry', fieldbackground=DARK_FRAME_BG, foreground=DARK_TEXT)
-        style.configure('TCombobox', fieldbackground=DARK_FRAME_BG, foreground=DARK_TEXT)
-        style.map('TCombobox', fieldbackground=[('readonly', DARK_FRAME_BG)])
-        style.configure('TProgressbar', background=DARK_HIGHLIGHT, troughcolor=DARK_FRAME_BG)
-        style.configure('TLabelframe', background=DARK_BG, foreground=DARK_TEXT)
-        style.configure('TLabelframe.Label', background=DARK_BG, foreground=DARK_TEXT)
+        # Dark theme disabled
+        pass
         
     def _build_ui(self):
         pad = {'padx': 10, 'pady': 8}
@@ -118,7 +90,7 @@ class ConverterGUI(tk.Tk):
         # Log
         log_frame = ttk.LabelFrame(self, text="Log")
         log_frame.pack(fill='both', expand=True, **pad)
-        self.log = tk.Text(log_frame, height=12, wrap='word', bg=DARK_FRAME_BG, fg=DARK_TEXT, insertbackground=DARK_TEXT)
+        self.log = tk.Text(log_frame, height=12, wrap='word')
         self.log.pack(fill='both', expand=True, padx=10, pady=8)
         self._refresh_state()
 
