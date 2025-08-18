@@ -1,0 +1,61 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - '3dm_version_converter/**'
+      - '.github/workflows/windows-exe-build.yml'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: 3dm_version_converter
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build GUI EXE
+        run: |
+          pyinstaller --noconfirm `
+            --noconsole `
+            --name 3DMVersionConverter `
+            --add-data README.md;. `
+            gui.py
+
+      - name: Build CLI EXE
+        run: |
+          pyinstaller --noconfirm `
+            --console `
+            --name 3DMConverterCLI `
+            converter.py
+
+      - name: Zip GUI app
+        run: |
+          Compress-Archive -Path "dist/3DMVersionConverter/*" -DestinationPath "../3DMVersionConverter_Windows.zip" -Force
+
+      - name: Upload GUI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 3DMVersionConverter_Windows
+          path: 3dm_version_converter/../3DMVersionConverter_Windows.zip
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 3DMConverterCLI_Windows
+          path: 3dm_version_converter/dist/3DMConverterCLI/**
