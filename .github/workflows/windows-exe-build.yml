@@ -43,8 +43,10 @@ jobs:
             --collect-all rhino3dm `
             --collect-data rhino3dm `
             --collect-binaries rhino3dm `
+            --collect-all click `
             --hidden-import rhino3dm `
             --hidden-import rhino3dm._rhino3dm `
+            --hidden-import click `
             --additional-hooks-dir pyinstaller-hooks `
             gui.py
 
@@ -57,8 +59,10 @@ jobs:
             --collect-all rhino3dm `
             --collect-data rhino3dm `
             --collect-binaries rhino3dm `
+            --collect-all click `
             --hidden-import rhino3dm `
             --hidden-import rhino3dm._rhino3dm `
+            --hidden-import click `
             --additional-hooks-dir pyinstaller-hooks `
             converter.py
 
