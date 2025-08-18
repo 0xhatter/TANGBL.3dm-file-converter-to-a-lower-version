@@ -45,7 +45,7 @@ jobs:
           pyinstaller --noconfirm `
             `
             --noconsole `
-            --name 3DMVersionConverter `
+            --name "TANGBL.3dm File Downsaver" `
             --add-data "README.md;." `
             --collect-all rhino3dm `
             --collect-data rhino3dm `
@@ -79,13 +79,13 @@ jobs:
 
       - name: Zip GUI app (one-folder)
         run: |
-          Compress-Archive -Path "dist/3DMVersionConverter/*" -DestinationPath "3DMVersionConverter_Windows.zip" -Force
+          Compress-Archive -Path "dist/TANGBL.3dm File Downsaver/*" -DestinationPath "TANGBL_3dm_File_Downsaver_Windows.zip" -Force
 
       - name: Upload GUI artifact
         uses: actions/upload-artifact@v4
         with:
-          name: 3DMVersionConverter_Windows
-          path: ${{ github.workspace }}/3dm_version_converter/3DMVersionConverter_Windows.zip
+          name: TANGBL_3dm_File_Downsaver_Windows
+          path: ${{ github.workspace }}/3dm_version_converter/TANGBL_3dm_File_Downsaver_Windows.zip
 
       - name: Upload CLI artifact
         uses: actions/upload-artifact@v4
