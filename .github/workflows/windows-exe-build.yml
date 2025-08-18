@@ -21,7 +21,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.10'
 
       - name: Install deps
         run: |
@@ -29,14 +29,23 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: Show site-packages
+        run: |
+          python -c "import site,sys; print('site-packages:', site.getsitepackages()); print('sys.path:', sys.path)"
+
       - name: Build GUI EXE
         run: |
           pyinstaller --noconfirm `
-            --onefile `
+            `
             --noconsole `
             --name 3DMVersionConverter `
             --add-data "README.md;." `
             --collect-all rhino3dm `
+            --collect-data rhino3dm `
+            --collect-binaries rhino3dm `
+            --hidden-import rhino3dm `
+            --hidden-import rhino3dm._rhino3dm `
+            --additional-hooks-dir pyinstaller-hooks `
             gui.py
 
       - name: Build CLI EXE
@@ -46,13 +55,26 @@ jobs:
             --console `
             --name 3DMConverterCLI `
             --collect-all rhino3dm `
+            --collect-data rhino3dm `
+            --collect-binaries rhino3dm `
+            --hidden-import rhino3dm `
+            --hidden-import rhino3dm._rhino3dm `
+            --additional-hooks-dir pyinstaller-hooks `
             converter.py
+
+      - name: Smoke test CLI EXE
+        run: |
+          ./dist/3DMConverterCLI.exe --help
+
+      - name: Zip GUI app (one-folder)
+        run: |
+          Compress-Archive -Path "dist/3DMVersionConverter/*" -DestinationPath "3DMVersionConverter_Windows.zip" -Force
 
       - name: Upload GUI artifact
         uses: actions/upload-artifact@v4
         with:
           name: 3DMVersionConverter_Windows
-          path: ${{ github.workspace }}/3dm_version_converter/dist/3DMVersionConverter.exe
+          path: ${{ github.workspace }}/3dm_version_converter/3DMVersionConverter_Windows.zip
 
       - name: Upload CLI artifact
         uses: actions/upload-artifact@v4
