@@ -26,13 +26,15 @@ jobs:
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install click==8.1.7 tqdm==4.66.1 --no-deps
-          pip install pyinstaller
+          pip install rhino3dm==7.15.0
+          pip install click==8.1.7 tqdm==4.66.1
+          pip install pyinstaller==5.13.2
+          pip list
 
       - name: Verify imports
         run: |
-          python -c "import click; import rhino3dm; print('Click version:', click.__version__); print('Rhino3dm loaded from:', rhino3dm.__file__)"
+          python -c "import sys; print('Python:', sys.version); import click; print('Click version:', click.__version__); import rhino3dm; print('Rhino3dm version:', rhino3dm.__version__); print('Rhino3dm loaded from:', rhino3dm.__file__)"
+          pip show rhino3dm
 
       - name: Show site-packages
         run: |
