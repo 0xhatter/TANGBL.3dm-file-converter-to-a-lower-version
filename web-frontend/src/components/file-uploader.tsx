@@ -26,6 +26,11 @@ export function FileUploader() {
     process.env.NEXT_PUBLIC_CONVERTER_API_URL?.replace(/\/$/, '') || '',
   []);
 
+  const s3ThresholdMb = useMemo(() => {
+    const v = Number(process.env.NEXT_PUBLIC_S3_THRESHOLD_MB || '100');
+    return Number.isFinite(v) && v > 0 ? v : 100;
+  }, []);
+
   const form = useForm<FormValues>({
     defaultValues: {
       targetVersion: '7',
@@ -38,6 +43,13 @@ export function FileUploader() {
       // Check if file is a .3dm file
       if (!selectedFile.name.toLowerCase().endsWith('.3dm')) {
         toast.error('Please upload a valid .3dm file');
+        return;
+      }
+      // Client-side size guardrail (default 500 MB; override via NEXT_PUBLIC_MAX_UPLOAD_MB)
+      const maxMb = Number(process.env.NEXT_PUBLIC_MAX_UPLOAD_MB || '500');
+      const maxBytes = maxMb * 1024 * 1024;
+      if (selectedFile.size > maxBytes) {
+        toast.error(`File is too large. Maximum allowed is ${maxMb} MB.`);
         return;
       }
       
@@ -75,10 +87,64 @@ export function FileUploader() {
       formData.append('targetVersion', values.targetVersion);
       const startTs = Date.now();
 
-      // Prefer direct upload to microservice if env URL exists, else fallback to proxy
+      // Choose path: S3 for large files (threshold MB), direct to microservice otherwise.
       let response: Response;
-      if (converterUrl) {
-        // Use XHR for upload progress
+      const useS3 = converterUrl && (file.size > s3ThresholdMb * 1024 * 1024);
+      if (useS3) {
+        // 1) Get presigned POST
+        const presignRes = await fetch(`${converterUrl}/presign?filename=${encodeURIComponent(file.name)}`);
+        if (!presignRes.ok) {
+          const t = await presignRes.text().catch(() => '');
+          throw new Error(`Failed to get upload URL. ${t}`);
+        }
+        const presign = await presignRes.json() as { url: string; fields: Record<string, string>; key: string };
+
+        // 2) Upload to S3 with XHR for progress
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', presign.url);
+          xhr.upload.onprogress = (evt) => {
+            if (!evt.lengthComputable) return;
+            const pct = Math.round((evt.loaded / evt.total) * 100);
+            setProgress(pct);
+            setBytesSent(evt.loaded);
+            const elapsed = (Date.now() - startTs) / 1000;
+            if (elapsed > 0) {
+              const bps = evt.loaded / elapsed;
+              setSpeedBps(bps);
+              const remaining = evt.total - evt.loaded;
+              setEtaSec(bps > 0 ? Math.max(0, Math.round(remaining / bps)) : null);
+            }
+          };
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 400) {
+              resolve();
+            } else {
+              reject(new Error(`S3 upload failed ${xhr.status}`));
+            }
+          };
+          xhr.onerror = () => reject(new Error('Network error uploading to S3'));
+          const s3Form = new FormData();
+          Object.entries(presign.fields).forEach(([k, v]) => s3Form.append(k, v));
+          s3Form.append('file', file);
+          xhr.send(s3Form);
+        });
+
+        // 3) Ask backend to convert by S3 key
+        const convertForm = new FormData();
+        convertForm.append('key', presign.key);
+        convertForm.append('targetVersion', values.targetVersion);
+        convertForm.append('originalFilename', file.name);
+        const convRes = await fetch(`${converterUrl}/convert-by-key`, { method: 'POST', body: convertForm });
+        if (!convRes.ok) {
+          if (convRes.status === 413) toast.error('File is too large. Maximum allowed is 500 MB.');
+          let msg = 'Conversion failed';
+          try { msg = (await convRes.json()).error || msg; } catch {}
+          throw new Error(msg);
+        }
+        response = convRes;
+      } else if (converterUrl) {
+        // Direct to microservice with XHR for progress
         const xhrResponse = await new Promise<Blob>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           xhr.open('POST', `${converterUrl}/convert`);
@@ -100,6 +166,7 @@ export function FileUploader() {
             if (xhr.status >= 200 && xhr.status < 300) {
               resolve(xhr.response);
             } else {
+              if (xhr.status === 413) toast.error('File is too large. Maximum allowed is 500 MB.');
               reject(new Error(`Upstream error ${xhr.status}`));
             }
           };
@@ -108,10 +175,14 @@ export function FileUploader() {
         });
         response = new Response(xhrResponse);
       } else {
+        // Fallback to Next.js API (no S3 path here)
         response = await fetch('/api/convert', { method: 'POST', body: formData });
       }
 
       if (!response.ok) {
+        if (response.status === 413) {
+          toast.error('File is too large. Maximum allowed is 500 MB.');
+        }
         let msg = 'Conversion failed';
         try { msg = (await response.json()).error || msg; } catch {}
         throw new Error(msg);
@@ -174,10 +245,10 @@ export function FileUploader() {
   }, [etaSec]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 max-w-3xl mx-auto">
       <div
         {...getRootProps()}
-        className={`rounded-lg p-10 text-center cursor-pointer transition-colors duration-200 border border-white/20 bg-white/5 backdrop-blur-md hover:bg-white/10 ${isDragActive ? 'ring-1 ring-white/40' : ''}`}
+        className={`rounded-md p-6 text-center cursor-pointer transition-colors duration-200 border border-white/20 bg-white/5 backdrop-blur-md hover:bg-white/10 ${isDragActive ? 'ring-1 ring-white/40' : ''}`}
       >
         <input {...getInputProps()} />
         {isDragActive ? (
@@ -186,7 +257,7 @@ export function FileUploader() {
           <div className="space-y-4">
             <div className="flex justify-center">
               <svg
-                className="w-14 h-14 text-muted-foreground/70"
+                className="w-10 h-10 text-muted-foreground/70"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -200,19 +271,19 @@ export function FileUploader() {
                 ></path>
               </svg>
             </div>
-            <p className="text-lg font-medium">Drag & drop your .3dm file here, or click to select</p>
-            <p className="text-sm text-muted-foreground">Only .3dm files are supported</p>
+            <p className="text-base font-medium">Drag & drop your .3dm file here, or click to select</p>
+            <p className="text-xs text-muted-foreground">Only .3dm files are supported</p>
           </div>
         )}
       </div>
 
       {file && (
-        <div className="mt-6 p-4 border border-white/20 rounded-md bg-white/5 backdrop-blur-md shadow-[0_0_0_1px_rgba(255,255,255,0.06)]">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="mt-4 p-4 border border-white/20 rounded-md bg-white/5 backdrop-blur-md shadow-[0_0_0_1px_rgba(255,255,255,0.06)] max-w-3xl mx-auto text-center">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
             {/* Left: file + speed */}
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center justify-center space-x-3">
               <svg
-                className="w-8 h-8 text-primary/80"
+                className="w-6 h-6 text-primary/80"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -226,44 +297,44 @@ export function FileUploader() {
                 ></path>
               </svg>
               <div>
-                <p className="font-semibold tracking-widest">{file.name}</p>
-                <p className="text-xs text-white/60">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
-                <p className="text-xs mt-1"><span className="text-white/60">TRANSFER SPEED</span> <span className="text-white">{humanSpeed}</span></p>
+                <p className="font-medium tracking-wide text-sm">{file.name}</p>
+                <p className="text-[11px] text-white/60">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                <p className="text-[11px] mt-1"><span className="text-white/60">TRANSFER SPEED</span> <span className="text-white">{humanSpeed}</span></p>
               </div>
               <Button
                 variant="outline"
                 size="icon"
                 onClick={handleRemoveFile}
                 title="Remove file"
-                className="border-white/20 text-white/80 hover:bg-white/10 hover:text-white hover:border-white/40 transition-colors"
-              ></Button>
+                className="border-white/20 text-white/80 hover:bg-white/10 hover:text-white hover:border-white/40 transition-colors h-8 w-8 text-sm"
+              >×</Button>
             </div>
             {/* Middle: data volume bar */}
             <div>
-              <div className="text-xs text-white/70 mb-2 tracking-widest">DATA VOLUME</div>
-              <div className="h-8 border border-white/30 grid grid-cols-24 gap-[2px] p-[2px] bg-white/5">
+              <div className="text-[11px] text-white/70 mb-1 tracking-widest">DATA VOLUME</div>
+              <div className="h-5 border border-white/25 grid grid-cols-24 gap-[1px] p-[1px] bg-white/5">
                 {Array.from({ length: 24 }).map((_, i) => (
                   <div key={i} className={`h-full ${progress >= ((i + 1) / 24) * 100 ? 'bg-white' : 'bg-white/10'}`}></div>
                 ))}
               </div>
-              <div className="flex justify-between text-xs text-white/80 mt-2">
+              <div className="flex justify-between text-[11px] text-white/80 mt-1.5">
                 <span>{(bytesSent / 1024 / 1024).toFixed(2)} MB</span>
                 <span>OF {(file.size / 1024 / 1024).toFixed(2)} MB</span>
               </div>
-              <div className="text-xs text-white/70 mt-1 tracking-widest">OVERALL PROGRESS {progress}%</div>
+              <div className="text-[11px] text-white/70 mt-1 tracking-widest">OVERALL PROGRESS {progress}%</div>
             </div>
             {/* Right: ETA + actions */}
-            <div className="space-y-3">
+            <div className="space-y-2">
               <div>
-                <div className="text-xs text-white/60">EST. TIME</div>
-                <div className="text-2xl font-semibold tracking-wide">{humanEta}</div>
-                <div className="text-xs text-white/60">LESS THAN 15 MIN.</div>
+                <div className="text-[11px] text-white/60">EST. TIME</div>
+                <div className="text-lg font-semibold tracking-wide">{humanEta}</div>
+                <div className="text-[11px] text-white/60">LESS THAN 15 MIN.</div>
               </div>
               <div className="grid grid-cols-1 gap-2">
                 <Button type="button" variant="outline" disabled={!isConverting}
-                        className="justify-center border-white/40 text-white hover:bg-white/10">PAUSE</Button>
+                        className="justify-center border-white/40 text-white hover:bg-white/10 h-8 text-sm">PAUSE</Button>
                 <Button type="button" variant="outline" onClick={handleRemoveFile}
-                        className="justify-center border-white/40 text-white hover:bg-white/10">CANCEL</Button>
+                        className="justify-center border-white/40 text-white hover:bg-white/10 h-8 text-sm">CANCEL</Button>
               </div>
             </div>
           </div>
@@ -271,21 +342,21 @@ export function FileUploader() {
       )}
 
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(handleConvert)} className="space-y-4">
+        <form onSubmit={form.handleSubmit(handleConvert)} className="space-y-4 max-w-3xl mx-auto text-center">
           <FormField
             control={form.control}
             name="targetVersion"
             render={({ field }) => (
-              <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
                 <div className="space-y-2">
-                  <FormLabel htmlFor="targetVersion" className="text-sm font-medium">Target Rhino Version</FormLabel>
+                  <FormLabel htmlFor="targetVersion" className="text-xs font-medium">Target Rhino Version</FormLabel>
                   <Select 
                     onValueChange={field.onChange} 
                     defaultValue={field.value}
                     disabled={!file || isConverting}
                   >
                     <FormControl>
-                      <SelectTrigger>
+                      <SelectTrigger className="h-9 text-sm">
                         <SelectValue placeholder="Select version" />
                       </SelectTrigger>
                     </FormControl>
@@ -305,7 +376,7 @@ export function FileUploader() {
           
           <Button 
             type="submit" 
-            className="w-full md:w-auto mt-2 transition-all duration-200 bg-primary/90 hover:bg-primary" 
+            className="w-full md:w-auto mt-2 transition-all duration-200 bg-primary/90 hover:bg-primary px-4 py-2 text-sm" 
             disabled={isConverting || !file}
           >
             {isConverting ? 'Converting...' : 'Convert and Download'}
