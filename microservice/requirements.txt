@@ -1,6 +1,6 @@
 fastapi==0.111.0
 uvicorn[standard]==0.30.0
 python-multipart==0.0.9
-rhino3dm==8.3.0
+rhino3dm==8.6.0
 click>=8.1.7
 tqdm>=4.66.4
