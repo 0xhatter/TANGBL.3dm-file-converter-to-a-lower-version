@@ -17,6 +17,12 @@ converter_dir = repo_root / "3dm_version_converter"
 if str(converter_dir) not in sys.path:
     sys.path.insert(0, str(converter_dir))
 
+
+# Upload constraints
+# Default max size is 500 MB; can be overridden with MAX_UPLOAD_MB env var.
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_MB", "500")) * 1024 * 1024
+CHUNK_SIZE = 1024 * 1024  # 1 MB
+
 try:
     import converter as conv  # type: ignore
 except Exception as e:
@@ -55,10 +61,17 @@ async def convert(file: UploadFile = File(...), targetVersion: str = Form(...)):
     input_path = tmpdir / file.filename
 
     try:
-        # Save upload
+        # Save upload in chunks with size limit
+        total = 0
         with input_path.open("wb") as f:
-            content = await file.read()
-            f.write(content)
+            while True:
+                chunk = await file.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_UPLOAD_BYTES:
+                    raise HTTPException(status_code=413, detail=f"File too large. Max {(MAX_UPLOAD_BYTES // (1024*1024))} MB")
+                f.write(chunk)
 
         # Build output path
         stem = input_path.stem
