@@ -174,10 +174,10 @@ export function FileUploader() {
   }, [etaSec]);
 
   return (
-    <div className="space-y-6 font-mono">
+    <div className="space-y-6">
       <div
         {...getRootProps()}
-        className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-colors duration-200 ${isDragActive ? 'border-primary bg-primary/10' : 'border-border/60 hover:border-border/90'}`}
+        className={`rounded-lg p-10 text-center cursor-pointer transition-colors duration-200 border border-white/20 bg-white/5 backdrop-blur-md hover:bg-white/10 ${isDragActive ? 'ring-1 ring-white/40' : ''}`}
       >
         <input {...getInputProps()} />
         {isDragActive ? (
@@ -207,7 +207,7 @@ export function FileUploader() {
       </div>
 
       {file && (
-        <div className="mt-6 p-4 border border-white/10 rounded-md bg-black/30">
+        <div className="mt-6 p-4 border border-white/20 rounded-md bg-white/5 backdrop-blur-md shadow-[0_0_0_1px_rgba(255,255,255,0.06)]">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Left: file + speed */}
             <div className="flex items-center space-x-3">
@@ -240,17 +240,17 @@ export function FileUploader() {
             </div>
             {/* Middle: data volume bar */}
             <div>
-              <div className="text-xs text-white/60 mb-2">DATA VOLUME</div>
-              <div className="h-8 border border-white/20 grid grid-cols-24 gap-[2px] p-[2px]">
+              <div className="text-xs text-white/70 mb-2 tracking-widest">DATA VOLUME</div>
+              <div className="h-8 border border-white/30 grid grid-cols-24 gap-[2px] p-[2px] bg-white/5">
                 {Array.from({ length: 24 }).map((_, i) => (
                   <div key={i} className={`h-full ${progress >= ((i + 1) / 24) * 100 ? 'bg-white' : 'bg-white/10'}`}></div>
                 ))}
               </div>
-              <div className="flex justify-between text-xs text-white/70 mt-2">
+              <div className="flex justify-between text-xs text-white/80 mt-2">
                 <span>{(bytesSent / 1024 / 1024).toFixed(2)} MB</span>
                 <span>OF {(file.size / 1024 / 1024).toFixed(2)} MB</span>
               </div>
-              <div className="text-xs text-white/60 mt-1">OVERALL PROGRESS {progress}%</div>
+              <div className="text-xs text-white/70 mt-1 tracking-widest">OVERALL PROGRESS {progress}%</div>
             </div>
             {/* Right: ETA + actions */}
             <div className="space-y-3">
