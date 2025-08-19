@@ -29,8 +29,9 @@ DIRECT_UPLOAD_MAX_BYTES = int(os.getenv("DIRECT_UPLOAD_MAX_MB", "100")) * 1024 *
 CHUNK_SIZE = 1024 * 1024  # 1 MB
 
 # S3 configuration (optional, used for presigned flow)
-AWS_REGION = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
-S3_BUCKET = os.getenv("S3_BUCKET")
+# Use env vars if provided; otherwise fall back to safe defaults shared by the user.
+AWS_REGION = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "eu-north-1"
+S3_BUCKET = os.getenv("S3_BUCKET") or "3dm-converter-uploads-prod"
 S3_PREFIX = os.getenv("S3_PREFIX", "uploads/").rstrip("/")
 s3_client = None
 if S3_BUCKET and AWS_REGION:
@@ -44,7 +45,11 @@ except Exception as e:
 app = FastAPI(title="TANGBL.3dm File Downsaver - Converter Service")
 
 # CORS
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "*")
+# Default to the user's production domains and localhost if ALLOWED_ORIGINS is not set.
+allowed_origins = os.getenv(
+    "ALLOWED_ORIGINS",
+    "https://3dm-file-downsaver.vercel.app,https://tangbl-3dm-file-downsaver.onrender.com,http://localhost:3000",
+)
 origins: List[str] = [o.strip() for o in allowed_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
@@ -131,12 +136,10 @@ async def presign(filename: str = Query(..., min_length=1)):
     key = f"{S3_PREFIX}/{file_id}/{filename}" if S3_PREFIX else f"{file_id}/{filename}"
 
     conditions = [["content-length-range", 0, MAX_UPLOAD_BYTES]]
-    fields = {"acl": "private"}
     try:
         post = s3_client.generate_presigned_post(
             Bucket=S3_BUCKET,
             Key=key,
-            Fields=fields,
             Conditions=conditions,
             ExpiresIn=900,  # 15 minutes
         )
