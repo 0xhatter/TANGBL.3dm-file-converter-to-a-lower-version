@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -35,6 +35,25 @@ export function FileUploader() {
   const [etaSec, setEtaSec] = useState<number | null>(null);
   const [isS3Upload, setIsS3Upload] = useState(false);
   const [s3UploadStage, setS3UploadStage] = useState<'presigning' | 's3uploading' | 'converting' | null>(null);
+
+  // Elapsed timer while converting
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const timerRef = useRef<number | null>(null);
+
+  const startTimer = () => {
+    setElapsedSec(0);
+    if (timerRef.current) window.clearInterval(timerRef.current);
+    timerRef.current = window.setInterval(() => {
+      setElapsedSec((s) => s + 1);
+    }, 1000);
+  };
+
+  const stopTimer = () => {
+    if (timerRef.current) {
+      window.clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  };
 
   const converterUrl = useMemo(() =>
     process.env.NEXT_PUBLIC_CONVERTER_API_URL?.replace(/\/$/, '') || '',
@@ -167,6 +186,7 @@ export function FileUploader() {
     setBytesSent(0);
     setSpeedBps(0);
     setEtaSec(null);
+    startTimer();
     
     try {
       toast.info(`Converting ${file.name} to Rhino ${values.targetVersion}...`);
@@ -262,11 +282,13 @@ export function FileUploader() {
     } finally {
       setIsConverting(false);
       setS3UploadStage(null);
+      stopTimer();
       setTimeout(() => {
         setProgress(0);
         setBytesSent(0);
         setSpeedBps(0);
         setEtaSec(null);
+        setElapsedSec(0);
       }, 800);
     }
   };
@@ -294,6 +316,12 @@ export function FileUploader() {
     const s = etaSec % 60;
     return `${m}m ${s.toString().padStart(2, '0')}s`;
   }, [etaSec]);
+
+  const humanElapsed = useMemo(() => {
+    const m = Math.floor(elapsedSec / 60);
+    const s = elapsedSec % 60;
+    return `${m}m ${s.toString().padStart(2, '0')}s`;
+  }, [elapsedSec]);
 
   // Get status message based on current stage
   const getStatusMessage = () => {
@@ -382,17 +410,15 @@ export function FileUploader() {
               </div>
             </div>
             {/* Right: ETA + actions */}
-            <div className="space-y-3">
+            <div className="space-y-2">
+              <div>
+                <div className="text-xs text-white/60">ELAPSED</div>
+                <div className="text-lg font-semibold tracking-wide">{humanElapsed}</div>
+              </div>
               <div>
                 <div className="text-xs text-white/60">EST. TIME</div>
                 <div className="text-lg font-semibold tracking-wide">{humanEta}</div>
                 <div className="text-xs text-white/60">LESS THAN 15 MIN.</div>
-              </div>
-              <div className="grid grid-cols-1 gap-2">
-                <Button type="button" variant="outline" disabled={!isConverting}
-                        className="justify-center border-white/40 text-white hover:bg-white/10 text-sm py-2 w-[80%] mx-auto">PAUSE</Button>
-                <Button type="button" variant="outline" onClick={handleRemoveFile}
-                        className="justify-center border-white/40 text-white hover:bg-white/10 text-sm py-2 w-[80%] mx-auto">CANCEL</Button>
               </div>
             </div>
           </div>
