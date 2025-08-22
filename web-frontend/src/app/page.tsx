@@ -37,6 +37,8 @@ export default function Home() {
         <div className="w-full max-w-[1350px] mx-auto px-2">
           <LiquidGlassBanner height={70} speedPxPerSec={14} text="Xperience Reality" />
         </div>
+
+        
       </div>
 
       <main className="flex min-h-screen flex-col items-center p-6 md:p-10 lg:p-20">
@@ -94,6 +96,88 @@ export default function Home() {
             </CardContent>
           </Card>
         </div>
+
+        {/* SEO: FAQ (moved to bottom, centered) */}
+        <section className="mt-16 space-y-6 text-center" aria-labelledby="faq">
+          <h2 id="faq" className="text-2xl font-semibold tracking-wide">FAQs</h2>
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-xl font-medium">How do I convert a Rhino 8 file to Rhino 6?</h3>
+              <p className="text-white/70">Upload your Rhino 8 <strong>.3dm</strong>, select <em>Rhino 6</em> as target, and click convert. For large files, we use a direct S3 upload and then convert by key.</p>
+            </div>
+            <div>
+              <h3 className="text-xl font-medium">Is there a Rhino 8 to Rhino 6 file converter online?</h3>
+              <p className="text-white/70">Yes, this tool is a free online <strong>rhino 8 to rhino 6 file converter</strong>. It also supports Rhino 7 → 6, Rhino 6 → 5, and more.</p>
+            </div>
+            <div>
+              <h3 className="text-xl font-medium">Can I downsave Rhino 7 to Rhino 6?</h3>
+              <p className="text-white/70">Absolutely. Choose <em>Rhino 6</em> as the target version for any Rhino 7 <strong>.3dm</strong> file.</p>
+            </div>
+            <div>
+              <h3 className="text-xl font-medium">Do you support Rhino 6 to Rhino 5?</h3>
+              <p className="text-white/70">Yes — select <em>Rhino 5</em> as target. We also support 5 → 4 → 3 → 2.</p>
+            </div>
+            <div>
+              <h3 className="text-xl font-medium">Is this a general .3dm file converter?</h3>
+              <p className="text-white/70">It is specialized for <strong>.3dm</strong> downsave across Rhino versions (8, 7, 6, 5, 4, 3, 2). Files are processed securely and not stored permanently.</p>
+            </div>
+          </div>
+          {/* FAQPage JSON-LD */}
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{
+              __html: JSON.stringify({
+                '@context': 'https://schema.org',
+                '@type': 'FAQPage',
+                mainEntity: [
+                  {
+                    '@type': 'Question',
+                    name: 'How do I convert a Rhino 8 file to Rhino 6?',
+                    acceptedAnswer: {
+                      '@type': 'Answer',
+                      text:
+                        'Upload your Rhino 8 .3dm, choose Rhino 6 as target, and convert. Large files route via secure S3 upload then convert-by-key.'
+                    }
+                  },
+                  {
+                    '@type': 'Question',
+                    name: 'Is there a Rhino 8 to Rhino 6 file converter online?',
+                    acceptedAnswer: {
+                      '@type': 'Answer',
+                      text:
+                        'Yes. This is a free online Rhino 8 to Rhino 6 converter and also supports Rhino 7 → 6 and Rhino 6 → 5.'
+                    }
+                  },
+                  {
+                    '@type': 'Question',
+                    name: 'Can I downsave Rhino 7 to Rhino 6?',
+                    acceptedAnswer: {
+                      '@type': 'Answer',
+                      text: 'Yes, select Rhino 6 as target for any Rhino 7 .3dm file.'
+                    }
+                  },
+                  {
+                    '@type': 'Question',
+                    name: 'Do you support Rhino 6 to Rhino 5?',
+                    acceptedAnswer: {
+                      '@type': 'Answer',
+                      text: 'Yes, and also 5 → 4 → 3 → 2.'
+                    }
+                  },
+                  {
+                    '@type': 'Question',
+                    name: 'Is this a general .3dm file converter?',
+                    acceptedAnswer: {
+                      '@type': 'Answer',
+                      text:
+                        'It is specialized for .3dm downsave across Rhino versions (8, 7, 6, 5, 4, 3, 2). Files are processed securely and not stored permanently.'
+                    }
+                  }
+                ]
+              })
+            }}
+          />
+        </section>
 
         {/* Footer */}
         <footer className="text-center text-sm text-white/60 mt-16 pb-6">

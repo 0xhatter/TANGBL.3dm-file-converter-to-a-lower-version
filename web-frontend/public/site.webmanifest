@@ -1,0 +1,17 @@
+{
+  "name": "TANGBL .3dm File Downsaver",
+  "short_name": "3dm Downsaver",
+  "description": "Convert Rhino .3dm files to lower versions online (7, 6, 5, 4, 3, 2).",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

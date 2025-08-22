@@ -41,3 +41,47 @@ The Next.js route at `web-frontend/src/app/api/convert/route.ts` proxies request
   - Implement chunked uploads (Tus/uppy) or direct-to-storage (S3/R2) then process by URL
   - Increase service plan memory/time if needed
   - Stream output back; service already streams with `FileResponse`
+
+## S3 Configuration for Large Files
+
+The microservice supports an S3 flow for files larger than 100MB. To enable this:
+
+1. Create an S3 bucket (or use compatible storage like Cloudflare R2)
+2. Set the following environment variables on your Render.com instance:
+   - `AWS_REGION` - The region of your S3 bucket (e.g., `us-east-1`, `eu-north-1`)
+   - `AWS_ACCESS_KEY_ID` - Your AWS access key with S3 permissions
+   - `AWS_SECRET_ACCESS_KEY` - Your AWS secret key
+   - `S3_BUCKET` - The name of your S3 bucket (e.g., `3dm-converter-uploads-prod`)
+   - `S3_PREFIX` - Optional prefix for uploaded files (e.g., `uploads/`)
+   - `MAX_UPLOAD_MB` - Optional, maximum file size in MB (default: 500)
+   - `DIRECT_UPLOAD_MAX_MB` - Optional, maximum size for direct uploads in MB (default: 100)
+
+3. Ensure your S3 bucket has proper CORS configuration to allow uploads from your frontend domain:
+```json
+[
+  {
+    "AllowedHeaders": ["*"],
+    "AllowedMethods": ["GET", "PUT", "POST"],
+    "AllowedOrigins": ["https://your-frontend-domain.com"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3000
+  }
+]
+```
+
+4. For security, set up a dedicated IAM user with limited permissions:
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::your-bucket-name/*"
+    }
+  ]
+}

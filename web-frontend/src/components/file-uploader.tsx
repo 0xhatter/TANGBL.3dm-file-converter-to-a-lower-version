@@ -8,10 +8,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Form, FormControl, FormField, FormLabel } from "@/components/ui/form";
 import { useForm } from 'react-hook-form';
 
+// Size threshold for S3 upload in bytes (100MB)
+const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024;
+
 type RhinoVersion = '2' | '3' | '4' | '5' | '6' | '7';
 
 interface FormValues {
   targetVersion: RhinoVersion;
+}
+
+interface PresignedData {
+  url: string;
+  fields: Record<string, string>;
+  key: string;
+  bucket: string;
+  maxMb: number;
+  expiresIn: number;
 }
 
 export function FileUploader() {
@@ -21,6 +33,8 @@ export function FileUploader() {
   const [bytesSent, setBytesSent] = useState(0);
   const [speedBps, setSpeedBps] = useState(0); // bytes per second
   const [etaSec, setEtaSec] = useState<number | null>(null);
+  const [isS3Upload, setIsS3Upload] = useState(false);
+  const [s3UploadStage, setS3UploadStage] = useState<'presigning' | 's3uploading' | 'converting' | null>(null);
 
   const converterUrl = useMemo(() =>
     process.env.NEXT_PUBLIC_CONVERTER_API_URL?.replace(/\/$/, '') || '',
@@ -43,6 +57,10 @@ export function FileUploader() {
       
       setFile(selectedFile);
       toast.success(`File "${selectedFile.name}" selected`);
+      
+      // Reset S3 upload state
+      setIsS3Upload(selectedFile.size > LARGE_FILE_THRESHOLD);
+      setS3UploadStage(null);
     }
   }, []);
 
@@ -53,6 +71,90 @@ export function FileUploader() {
     },
     maxFiles: 1,
   });
+
+  // Get presigned URL for S3 upload
+  const getPresignedUrl = async (filename: string): Promise<PresignedData> => {
+    setS3UploadStage('presigning');
+    const apiUrl = converterUrl ? `${converterUrl}/presign` : '/api/presign';
+    const response = await fetch(`${apiUrl}?filename=${encodeURIComponent(filename)}`);
+    
+    if (!response.ok) {
+      throw new Error('Failed to get presigned URL');
+    }
+    
+    return await response.json();
+  };
+
+  // Upload file directly to S3 using presigned URL
+  const uploadToS3 = async (presignedData: PresignedData, fileToUpload: File): Promise<string> => {
+    setS3UploadStage('s3uploading');
+    const { url, fields, key } = presignedData;
+    
+    const formData = new FormData();
+    // Add all fields from presigned URL
+    Object.entries(fields).forEach(([fieldName, fieldValue]) => {
+      formData.append(fieldName, fieldValue);
+    });
+    // Add the file last
+    formData.append('file', fileToUpload);
+    
+    const startTs = Date.now();
+    
+    // Use XHR for upload progress
+    await new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', url);
+      xhr.upload.onprogress = (evt) => {
+        if (!evt.lengthComputable) return;
+        const pct = Math.round((evt.loaded / evt.total) * 100);
+        setProgress(pct);
+        setBytesSent(evt.loaded);
+        const elapsed = (Date.now() - startTs) / 1000;
+        if (elapsed > 0) {
+          const bps = evt.loaded / elapsed;
+          setSpeedBps(bps);
+          const remaining = evt.total - evt.loaded;
+          setEtaSec(bps > 0 ? Math.max(0, Math.round(remaining / bps)) : null);
+        }
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve();
+        } else {
+          reject(new Error(`S3 upload failed: ${xhr.status}`));
+        }
+      };
+      xhr.onerror = () => reject(new Error('Network error during S3 upload'));
+      xhr.send(formData);
+    });
+    
+    return key;
+  };
+
+  // Convert file by S3 key
+  const convertByKey = async (key: string, targetVersion: string, originalFilename: string): Promise<Blob> => {
+    setS3UploadStage('converting');
+    setProgress(0); // Reset progress for conversion phase
+    
+    const apiUrl = converterUrl ? `${converterUrl}/convert-by-key` : '/api/convert-by-key';
+    const formData = new FormData();
+    formData.append('key', key);
+    formData.append('targetVersion', targetVersion);
+    formData.append('originalFilename', originalFilename);
+    
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      body: formData,
+    });
+    
+    if (!response.ok) {
+      let msg = 'Conversion failed';
+      try { msg = (await response.json()).error || msg; } catch {}
+      throw new Error(msg);
+    }
+    
+    return await response.blob();
+  };
 
   const handleConvert = async (values: FormValues) => {
     if (!file) {
@@ -69,56 +171,73 @@ export function FileUploader() {
     try {
       toast.info(`Converting ${file.name} to Rhino ${values.targetVersion}...`);
       
-      // Create form data to send to the API
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('targetVersion', values.targetVersion);
-      const startTs = Date.now();
-
-      // Prefer direct upload to microservice if env URL exists, else fallback to proxy
-      let response: Response;
-      if (converterUrl) {
-        // Use XHR for upload progress
-        const xhrResponse = await new Promise<Blob>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open('POST', `${converterUrl}/convert`);
-          xhr.responseType = 'blob';
-          xhr.upload.onprogress = (evt) => {
-            if (!evt.lengthComputable) return;
-            const pct = Math.round((evt.loaded / evt.total) * 100);
-            setProgress(pct);
-            setBytesSent(evt.loaded);
-            const elapsed = (Date.now() - startTs) / 1000;
-            if (elapsed > 0) {
-              const bps = evt.loaded / elapsed;
-              setSpeedBps(bps);
-              const remaining = evt.total - evt.loaded;
-              setEtaSec(bps > 0 ? Math.max(0, Math.round(remaining / bps)) : null);
-            }
-          };
-          xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) {
-              resolve(xhr.response);
-            } else {
-              reject(new Error(`Upstream error ${xhr.status}`));
-            }
-          };
-          xhr.onerror = () => reject(new Error('Network error'));
-          xhr.send(formData);
-        });
-        response = new Response(xhrResponse);
-      } else {
-        response = await fetch('/api/convert', { method: 'POST', body: formData });
-      }
-
-      if (!response.ok) {
-        let msg = 'Conversion failed';
-        try { msg = (await response.json()).error || msg; } catch {}
-        throw new Error(msg);
-      }
+      let blob: Blob;
       
-      // Get the file blob from the response
-      const blob = await response.blob();
+      // Use S3 flow for large files
+      if (file.size > LARGE_FILE_THRESHOLD) {
+        toast.info('Large file detected. Using S3 upload flow...');
+        
+        // Step 1: Get presigned URL
+        const presignedData = await getPresignedUrl(file.name);
+        
+        // Step 2: Upload to S3
+        const key = await uploadToS3(presignedData, file);
+        toast.success('File uploaded to S3 successfully');
+        
+        // Step 3: Convert by key
+        blob = await convertByKey(key, values.targetVersion, file.name);
+      } else {
+        // Direct upload for smaller files (existing code)
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('targetVersion', values.targetVersion);
+        const startTs = Date.now();
+
+        // Prefer direct upload to microservice if env URL exists, else fallback to proxy
+        let response: Response;
+        if (converterUrl) {
+          // Use XHR for upload progress
+          const xhrResponse = await new Promise<Blob>((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', `${converterUrl}/convert`);
+            xhr.responseType = 'blob';
+            xhr.upload.onprogress = (evt) => {
+              if (!evt.lengthComputable) return;
+              const pct = Math.round((evt.loaded / evt.total) * 100);
+              setProgress(pct);
+              setBytesSent(evt.loaded);
+              const elapsed = (Date.now() - startTs) / 1000;
+              if (elapsed > 0) {
+                const bps = evt.loaded / elapsed;
+                setSpeedBps(bps);
+                const remaining = evt.total - evt.loaded;
+                setEtaSec(bps > 0 ? Math.max(0, Math.round(remaining / bps)) : null);
+              }
+            };
+            xhr.onload = () => {
+              if (xhr.status >= 200 && xhr.status < 300) {
+                resolve(xhr.response);
+              } else {
+                reject(new Error(`Upstream error ${xhr.status}`));
+              }
+            };
+            xhr.onerror = () => reject(new Error('Network error'));
+            xhr.send(formData);
+          });
+          response = new Response(xhrResponse);
+        } else {
+          response = await fetch('/api/convert', { method: 'POST', body: formData });
+        }
+
+        if (!response.ok) {
+          let msg = 'Conversion failed';
+          try { msg = (await response.json()).error || msg; } catch {}
+          throw new Error(msg);
+        }
+        
+        // Get the file blob from the response
+        blob = await response.blob();
+      }
       
       // Create a download link
       const downloadUrl = URL.createObjectURL(blob);
@@ -142,6 +261,7 @@ export function FileUploader() {
       console.error(error);
     } finally {
       setIsConverting(false);
+      setS3UploadStage(null);
       setTimeout(() => {
         setProgress(0);
         setBytesSent(0);
@@ -153,6 +273,8 @@ export function FileUploader() {
 
   const handleRemoveFile = () => {
     setFile(null);
+    setIsS3Upload(false);
+    setS3UploadStage(null);
   };
 
   const humanSpeed = useMemo(() => {
@@ -172,6 +294,19 @@ export function FileUploader() {
     const s = etaSec % 60;
     return `${m}m ${s.toString().padStart(2, '0')}s`;
   }, [etaSec]);
+
+  // Get status message based on current stage
+  const getStatusMessage = () => {
+    if (!isConverting) return null;
+    if (!isS3Upload) return "Converting...";
+    
+    switch (s3UploadStage) {
+      case 'presigning': return "Preparing S3 upload...";
+      case 's3uploading': return "Uploading to S3...";
+      case 'converting': return "Converting file...";
+      default: return "Processing...";
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -214,6 +349,9 @@ export function FileUploader() {
               <div>
                 <p className="text-sm font-medium tracking-widest">{file.name}</p>
                 <p className="text-xs text-white/60">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                {isS3Upload && !isConverting && (
+                  <p className="text-xs mt-1 text-amber-300">Large file - will use S3 upload</p>
+                )}
                 <p className="text-xs mt-1"><span className="text-white/60">TRANSFER SPEED</span> <span className="text-white">{humanSpeed}</span></p>
                 <Button
                   variant="outline"
@@ -236,7 +374,12 @@ export function FileUploader() {
                 <span>{(bytesSent / 1024 / 1024).toFixed(2)} MB</span>
                 <span>OF {(file.size / 1024 / 1024).toFixed(2)} MB</span>
               </div>
-              <div className="text-xs text-white/70 mt-1 tracking-widest">OVERALL PROGRESS {progress}%</div>
+              <div className="text-xs text-white/70 mt-1 tracking-widest">
+                {isConverting && s3UploadStage && (
+                  <span className="text-amber-300 uppercase">{getStatusMessage()} </span>
+                )}
+                OVERALL PROGRESS {progress}%
+              </div>
             </div>
             {/* Right: ETA + actions */}
             <div className="space-y-3">
@@ -294,7 +437,7 @@ export function FileUploader() {
             className="w-full md:w-auto mt-2 transition-all duration-200 bg-primary/90 hover:bg-primary text-sm px-4 py-2" 
             disabled={isConverting || !file}
           >
-            {isConverting ? 'Converting...' : 'Convert and Download'}
+            {isConverting ? getStatusMessage() || 'Converting...' : 'Convert and Download'}
           </Button>
         </form>
       </Form>
